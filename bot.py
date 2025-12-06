@@ -2,6 +2,7 @@ from discord import app_commands
 from dotenv import load_dotenv
 import os
 import discord
+from discord import ui
 import yt_dlp
 
 load_dotenv()
@@ -30,6 +31,9 @@ client = MyClient(intents=intents)
 YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
 FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
+PREV_SONGS = list()
+CURRENT = ""
+NEXT_SONGS = list()
 
 
 async def _join(interaction: discord.Interaction):
@@ -42,15 +46,7 @@ async def _join(interaction: discord.Interaction):
     await voice_channel.connect()
 
 
-@client.tree.command(name="join", description="Der Bot betritt deinen aktuellen Sprachkanal.")
-async def join(interaction: discord.Interaction):
-    await _join(interaction)
-    await interaction.response.send_message(f"Erfolgreich dem Kanal `{voice_channel.name}` beigetreten!",
-                                            ephemeral=True)
-
-
-@client.tree.command(name="leave", description="Der Bot verlässt den Sprachkanal.")
-async def leave(interaction: discord.Interaction):
+async def _leave(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
     if voice_client and voice_client.is_connected():
         await voice_client.disconnect()
@@ -59,9 +55,8 @@ async def leave(interaction: discord.Interaction):
         await interaction.response.send_message("Ich bin derzeit in keinem Sprachkanal.", ephemeral=True)
 
 
-@client.tree.command(name="play", description="Spielt einen Song von YouTube ab.")
-@app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
-async def play(interaction: discord.Interaction, query: str):
+
+async def _play(interaction: discord.Interaction, query: str):
     voice_client = interaction.guild.voice_client
 
     if not voice_client:
@@ -72,12 +67,9 @@ async def play(interaction: discord.Interaction, query: str):
         await interaction.response.send_message("Es wird bereits ein Song abgespielt.", ephemeral=True)
         return
 
-    # === HIER IST DIE WICHTIGE ÄNDERUNG ===
-    # Teile Discord sofort mit, dass du Zeit brauchst.
     await interaction.response.defer()
 
     try:
-        # Führe die langsame Operation (YouTube-Suche) aus
         with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
             info = ydl.extract_info(f"ytsearch:{query}", download=False)['entries'][0]
 
@@ -85,7 +77,6 @@ async def play(interaction: discord.Interaction, query: str):
         source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
         voice_client.play(source)
 
-        # Sende die finale Antwort mit .followup
         await interaction.followup.send(f"▶️ Spiele jetzt: **{info['title']}**")
 
 
@@ -93,6 +84,25 @@ async def play(interaction: discord.Interaction, query: str):
         print(f"Ein detaillierter Fehler ist aufgetreten: {repr(e)}")
         print(f"Fehlertyp: {type(e)}")
         await interaction.followup.send("Ein Fehler ist beim Verarbeiten des Songs aufgetreten. Bitte sieh im Terminal nach Details.")
+
+
+@client.tree.command(name="join", description="Der Bot betritt deinen aktuellen Sprachkanal.")
+async def join(interaction: discord.Interaction):
+    await _join(interaction)
+    await interaction.response.send_message(f"Erfolgreich dem Kanal `{voice_channel.name}` beigetreten!",
+                                            ephemeral=True)
+
+@client.tree.command(name="leave", description="Der Bot verlässt den Sprachkanal.")
+async def leave(interaction: discord.Interaction):
+    await _leave(interaction)
+
+
+@client.tree.command(name="play", description="Spielt einen Song von YouTube ab.")
+@app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
+async def play(interaction: discord.Interaction, query: str):
+    await _play(interaction, query)
+
+
 
 if __name__ == '__main__':
     dc_token = os.getenv('DC_TOKEN')
