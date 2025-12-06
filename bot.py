@@ -26,6 +26,33 @@ class MyClient(discord.Client):
         print(f'Eingeloggt als {self.user} und Befehle synchronisiert!')
 
 
+class MusicControlsView(ui.View):
+    def __init__(self, *, timeout=180):
+        super().__init__(timeout=timeout)
+
+    # --- Der Skip-Button ---
+    @ui.button(label="Skip", style=discord.ButtonStyle.secondary, emoji="⏭️")
+    async def skip_button(self, interaction: discord.Interaction, button: ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_playing():
+            voice_client.stop() # .stop() beendet den aktuellen Song
+            await interaction.response.send_message("Song übersprungen.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
+
+    # --- Der Stop-Button ---
+    @ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️")
+    async def stop_button(self, interaction: discord.Interaction, button: ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_connected():
+            # Hier könntest du auch die Queue leeren, falls du eine hast
+            voice_client.stop()
+            await voice_client.disconnect()
+            await interaction.response.send_message("Wiedergabe gestoppt und Kanal verlassen.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Ich bin in keinem Sprachkanal.", ephemeral=True)
+
+
 intents = discord.Intents.default()
 client = MyClient(intents=intents)
 YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
@@ -77,7 +104,9 @@ async def _play(interaction: discord.Interaction, query: str):
         source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
         voice_client.play(source)
 
-        await interaction.followup.send(f"▶️ Spiele jetzt: **{info['title']}**")
+        view = MusicControlsView()
+
+        await interaction.followup.send(f"▶️ Spiele jetzt: **{info['title']}**", view=view)
 
 
     except Exception as e:
