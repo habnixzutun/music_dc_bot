@@ -31,8 +31,8 @@ YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
 FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
 
-@client.tree.command(name="join", description="Der Bot betritt deinen aktuellen Sprachkanal.")
-async def join(interaction: discord.Interaction):
+
+async def _join(interaction: discord.Interaction):
     if not interaction.user.voice:
         await interaction.response.send_message("Du befindest dich in keinem Sprachkanal, dem ich beitreten könnte.",
                                                 ephemeral=True)
@@ -40,6 +40,11 @@ async def join(interaction: discord.Interaction):
 
     voice_channel = interaction.user.voice.channel
     await voice_channel.connect()
+
+
+@client.tree.command(name="join", description="Der Bot betritt deinen aktuellen Sprachkanal.")
+async def join(interaction: discord.Interaction):
+    await _join(interaction)
     await interaction.response.send_message(f"Erfolgreich dem Kanal `{voice_channel.name}` beigetreten!",
                                             ephemeral=True)
 
@@ -60,9 +65,8 @@ async def play(interaction: discord.Interaction, query: str):
     voice_client = interaction.guild.voice_client
 
     if not voice_client:
-        await interaction.response.send_message("Ich bin in keinem Sprachkanal. Bitte benutze zuerst `/join`.",
-                                                ephemeral=True)
-        return
+        await _join(interaction)
+        voice_client = interaction.guild.voice_client
 
     if voice_client.is_playing():
         await interaction.response.send_message("Es wird bereits ein Song abgespielt.", ephemeral=True)
