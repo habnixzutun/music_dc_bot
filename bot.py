@@ -92,6 +92,17 @@ CURRENT = list()
 NEXT_SONGS = list()
 
 
+def get_info(query: str):
+    if query.lower().startswith("https://"):
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            info = ydl.extract_info(query, download=False)
+    else:
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            info = ydl.extract_info(f"ytsearch:{query}", download=False)['entries']
+        info = info[0]
+    return info
+
+
 async def _join(interaction: discord.Interaction):
     if not interaction.user.voice:
         await interaction.response.send_message("Du befindest dich in keinem Sprachkanal, dem ich beitreten könnte.",
@@ -121,16 +132,29 @@ async def _play(interaction: discord.Interaction, query: str):
     await interaction.response.defer()
 
     try:
-        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-            info = ydl.extract_info(f"ytsearch:{query}", download=False)['entries'][0]
+        info = get_info(query)
+
+        if not info:
+            await interaction.followup.send(f"Ich konnte den Song leider nicht finden")
+            return
 
         url = info['url']
         source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
         voice_client.play(source, bitrate=256)
 
         view = MusicControlsView()
-
-        await interaction.followup.send(f"▶️ Spiele jetzt: **{info['title']}**", view=view)
+        artist = info.get("artist")
+        if not artist:
+            artist = info.get("creator")
+        if not artist:
+            artist = info.get("uploader")
+        title = info.get("title")
+        if not title:
+            title = info.get("alt_title")
+        if not title:
+            title = info.get("fulltitle")
+        duration = info.get("duration_string")
+        await interaction.followup.send(f"▶️ Spiele jetzt: **{title} - {artist}**  `[{duration}]`", view=view)
 
 
     except Exception as e:
