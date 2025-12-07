@@ -29,23 +29,52 @@ class MyClient(discord.Client):
 class MusicControlsView(ui.View):
     def __init__(self, *, timeout=180):
         super().__init__(timeout=timeout)
-
-    # --- Der Skip-Button ---
-    @ui.button(label="Skip", style=discord.ButtonStyle.secondary, emoji="⏭️")
-    async def skip_button(self, interaction: discord.Interaction, button: ui.Button):
+    @ui.button(label="Prev", style=discord.ButtonStyle.secondary, emoji="⏪")
+    async def prev_button(self, interaction: discord.Interaction, button: ui.Button):
         voice_client = interaction.guild.voice_client
-        if voice_client and voice_client.is_playing():
-            voice_client.stop() # .stop() beendet den aktuellen Song
-            await interaction.response.send_message("Song übersprungen.", ephemeral=True)
+        if voice_client or not voice_client.is_playing():
+            try:
+                NEXT_SONGS.append(CURRENT[0])
+                CURRENT[0] = PREV_SONGS.pop(-1)
+                await _play(interaction, CURRENT[0])
+            except IndexError:
+                await interaction.response.send_message("Es gibt keinen vorherigen Song")
         else:
             await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
 
-    # --- Der Stop-Button ---
+    @ui.button(label="Pause", style=discord.ButtonStyle.secondary, emoji="⏸️")
+    async def pause_button(self, interaction: discord.Interaction, button: ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_connected():
+            if voice_client.is_paused():
+                voice_client.resume()
+                await interaction.response.send_message("Wiedergabe läuft weiter", ephemeral=True)
+            else:
+                voice_client.pause()
+                await interaction.response.send_message("Wiedergabe pausiert", ephemeral=True)
+        else:
+            await interaction.response.send_message("Ich bin in keinem Sprachkanal.", ephemeral=True)
+
+    @ui.button(label="Skip", style=discord.ButtonStyle.secondary, emoji="⏩")
+    async def skip_button(self, interaction: discord.Interaction, button: ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client or not voice_client.is_playing():
+            try:
+                PREV_SONGS.append(CURRENT[0])
+                CURRENT[0] = NEXT_SONGS.pop(0)
+                await _play(interaction, CURRENT[0])
+            except IndexError:
+                await interaction.response.send_message("Es gibt keinen nächsten Song")
+        else:
+            await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
+
     @ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️")
     async def stop_button(self, interaction: discord.Interaction, button: ui.Button):
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.is_connected():
-            # Hier könntest du auch die Queue leeren, falls du eine hast
+            PREV_SONGS.clear()
+            CURRENT.clear()
+            NEXT_SONGS.clear()
             voice_client.stop()
             await voice_client.disconnect()
             await interaction.response.send_message("Wiedergabe gestoppt und Kanal verlassen.", ephemeral=True)
@@ -59,7 +88,7 @@ YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
 FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
 PREV_SONGS = list()
-CURRENT = ""
+CURRENT = list()
 NEXT_SONGS = list()
 
 
@@ -85,14 +114,9 @@ async def _leave(interaction: discord.Interaction):
 
 async def _play(interaction: discord.Interaction, query: str):
     voice_client = interaction.guild.voice_client
-
     if not voice_client:
         await _join(interaction)
         voice_client = interaction.guild.voice_client
-
-    if voice_client.is_playing():
-        await interaction.response.send_message("Es wird bereits ein Song abgespielt.", ephemeral=True)
-        return
 
     await interaction.response.defer()
 
@@ -102,7 +126,7 @@ async def _play(interaction: discord.Interaction, query: str):
 
         url = info['url']
         source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
-        voice_client.play(source)
+        voice_client.play(source, bitrate=256)
 
         view = MusicControlsView()
 
