@@ -107,10 +107,11 @@ async def _join(interaction: discord.Interaction):
     if not interaction.user.voice:
         await interaction.response.send_message("Du befindest dich in keinem Sprachkanal, dem ich beitreten könnte.",
                                                 ephemeral=True)
-        return
+        return None
 
     voice_channel = interaction.user.voice.channel
     await voice_channel.connect()
+    return voice_channel
 
 
 async def _leave(interaction: discord.Interaction):
@@ -157,6 +158,7 @@ async def _play(interaction: discord.Interaction, query: str):
         await interaction.followup.send(f"▶️ Spiele jetzt: **{title} - {artist}**  `[{duration}]`", view=view)
 
 
+
     except Exception as e:
         print(f"Ein detaillierter Fehler ist aufgetreten: {repr(e)}")
         print(f"Fehlertyp: {type(e)}")
@@ -165,7 +167,9 @@ async def _play(interaction: discord.Interaction, query: str):
 
 @client.tree.command(name="join", description="Der Bot betritt deinen aktuellen Sprachkanal.")
 async def join(interaction: discord.Interaction):
-    await _join(interaction)
+    voice_channel = await _join(interaction)
+    if not voice_channel:
+        return
     await interaction.response.send_message(f"Erfolgreich dem Kanal `{voice_channel.name}` beigetreten!",
                                             ephemeral=True)
 
