@@ -48,8 +48,9 @@ def get_playlist_info(query: str):
     """Holt sich die Infos für eine Playlist oder einen einzelnen Song und gibt immer eine Liste zurück."""
     playlist_ydl_options = {'format': 'bestaudio', 'extract_flat': True, 'quiet': True}
     try:
+        search_query = f"ytsearch:{query}" if not query.lower().startswith("https://") else query
         with yt_dlp.YoutubeDL(playlist_ydl_options) as ydl:
-            info = ydl.extract_info(query, download=False)
+            info = ydl.extract_info(search_query, download=False)
 
         if 'entries' in info:
             title = info.get('title')
