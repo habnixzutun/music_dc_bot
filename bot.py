@@ -4,6 +4,7 @@ import os
 import discord
 from discord import ui
 import yt_dlp
+from openpyxl.styles.numbers import NumberFormat
 
 load_dotenv()
 try:
@@ -33,12 +34,7 @@ class MusicControlsView(ui.View):
     async def prev_button(self, interaction: discord.Interaction, button: ui.Button):
         voice_client = interaction.guild.voice_client
         if voice_client or not voice_client.is_playing():
-            try:
-                NEXT_SONGS.append(CURRENT[0])
-                CURRENT[0] = PREV_SONGS.pop(-1)
-                await _play(interaction, CURRENT[0])
-            except IndexError:
-                await interaction.response.send_message("Es gibt keinen vorherigen Song")
+            await skip_to_prev(interaction)
         else:
             await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
 
@@ -47,11 +43,15 @@ class MusicControlsView(ui.View):
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.is_connected():
             if voice_client.is_paused():
+                button.label = "Pause"
+                button.emoji = "⏸️"
                 voice_client.resume()
-                await interaction.response.send_message("Wiedergabe läuft weiter", ephemeral=True)
+                await interaction.response.edit_message(view=self)
             else:
+                button.label = "Fortsetzen"
+                button.emoji = "▶️"
                 voice_client.pause()
-                await interaction.response.send_message("Wiedergabe pausiert", ephemeral=True)
+                await interaction.response.edit_message(view=self)
         else:
             await interaction.response.send_message("Ich bin in keinem Sprachkanal.", ephemeral=True)
 
@@ -59,12 +59,8 @@ class MusicControlsView(ui.View):
     async def skip_button(self, interaction: discord.Interaction, button: ui.Button):
         voice_client = interaction.guild.voice_client
         if voice_client or not voice_client.is_playing():
-            try:
-                PREV_SONGS.append(CURRENT[0])
-                CURRENT[0] = NEXT_SONGS.pop(0)
-                await _play(interaction, CURRENT[0])
-            except IndexError:
-                await interaction.response.send_message("Es gibt keinen nächsten Song")
+            await skip_to_next(
+                interaction)
         else:
             await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
 
@@ -123,24 +119,71 @@ async def _leave(interaction: discord.Interaction):
         await interaction.response.send_message("Ich bin derzeit in keinem Sprachkanal.", ephemeral=True)
 
 
+def minimize_info(info: dict) -> dict:
+    return {
+        "url": info.get("url"),
+        "title": info.get("title"),
+        "artist": info.get("artist"),
+        "alt_title": info.get("alt_title"),
+        "uploader": info.get("uploader"),
+        "fulltitle": info.get("fulltitle"),
+        "creator": info.get("creator"),
+        "duration_string": info.get("duration_string")
+    }
 
-async def _play(interaction: discord.Interaction, query: str):
+
+async def _add_next(query: str):
+    info = get_info(query)
+    if not info:
+        await interaction.followup.send(f"Ich konnte den Song leider nicht finden")
+        return
+    NEXT_SONGS.insert(0, minimize_info(info))
+
+
+async def _add_last(query: str):
+    info = get_info(query)
+    if not info:
+        await interaction.followup.send(f"Ich konnte den Song leider nicht finden")
+        return
+    NEXT_SONGS.append(minimize_info(info))
+
+
+async def skip_to_next(interaction: discord.Interaction):
+    if NEXT_SONGS:
+        if CURRENT:
+            PREV_SONGS.insert(0, CURRENT.pop(0))
+        CURRENT.insert(0, NEXT_SONGS.pop(0))
+    else:
+        await interaction.response.send_message("Es gibt keinen nächsten Song")
+        return
+    await _play(interaction)
+
+
+async def skip_to_prev(interaction: discord.Interaction):
+    if PREV_SONGS:
+        if CURRENT:
+            NEXT_SONGS.insert(0, CURRENT.pop(0))
+        CURRENT.insert(0, PREV_SONGS.pop(0))
+    else:
+        await interaction.response.send_message("Es gibt keinen vorherigen Song")
+        return
+    await _play(interaction)
+
+
+async def _play(interaction: discord.Interaction):
+    info = CURRENT[0]
     voice_client = interaction.guild.voice_client
     if not voice_client:
         await _join(interaction)
         voice_client = interaction.guild.voice_client
 
-    await interaction.response.defer()
-
     try:
-        info = get_info(query)
-
-        if not info:
-            await interaction.followup.send(f"Ich konnte den Song leider nicht finden")
-            return
 
         url = info['url']
         source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
+
+        if voice_client.is_playing():
+            voice_client.stop()
         voice_client.play(source, bitrate=256)
 
         view = MusicControlsView()
@@ -154,8 +197,11 @@ async def _play(interaction: discord.Interaction, query: str):
             title = info.get("alt_title")
         if not title:
             title = info.get("fulltitle")
-        duration = info.get("duration_string")
-        await interaction.followup.send(f"▶️ Spiele jetzt: **{title} - {artist}**  `[{duration}]`", view=view)
+        duration = info.get("duration_string", "")
+        try:
+            await interaction.followup.send(f"▶️ Spiele jetzt: **{title} - {artist}**  `[{duration}]`", view=view)
+        except discord.errors.NotFound:
+            await interaction.response.edit_message(content=f"▶️ Spiele jetzt: **{title} - {artist}**  `[{duration}]`")
 
 
 
@@ -181,7 +227,31 @@ async def leave(interaction: discord.Interaction):
 @client.tree.command(name="play", description="Spielt einen Song von YouTube ab.")
 @app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
 async def play(interaction: discord.Interaction, query: str):
-    await _play(interaction, query)
+    await interaction.response.defer()
+    await _add_next(query)
+    await skip_to_next(interaction)
+
+
+@client.tree.command(name="play-next", description="Fügt einen Song am Anfang der Warteschlange ein")
+@app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
+async def play_next(interaction: discord.Interaction, query: str):
+    await _add_next(query)
+
+
+@client.tree.command(name="play-last", description="Fügt einen Song am Ende der Warteschlange ein")
+@app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
+async def play_last(interaction: discord.Interaction, query: str):
+    await _add_last(query)
+
+
+@client.tree.command(name="skip", description="Überspringe den aktuellen Song")
+async def skip(interaction: discord.Interaction):
+    await skip_to_next(interaction)
+
+
+@client.tree.command(name="prev", description="Springe zum vorherigen Song")
+async def prev(interaction: discord.Interaction):
+    await skip_to_next(interaction)
 
 
 
