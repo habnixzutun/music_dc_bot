@@ -44,6 +44,24 @@ def get_info(query: str):
         return None
 
 
+def get_playlist_info(query: str):
+    """Holt sich die Infos für eine Playlist oder einen einzelnen Song und gibt immer eine Liste zurück."""
+    playlist_ydl_options = {'format': 'bestaudio', 'extract_flat': True, 'quiet': True}
+    try:
+        with yt_dlp.YoutubeDL(playlist_ydl_options) as ydl:
+            info = ydl.extract_info(query, download=False)
+
+        if 'entries' in info:
+            title = info.get('title')
+            channel = info.get('channel')
+            # Es ist eine Playlist, gib die Liste der Video-Infos zurück
+            return title + " - " + channel, info['entries']
+        return None
+    except Exception as e:
+        print(f"Fehler beim Abrufen der Playlist-Info: {e}")
+        return None
+
+
 def minimize_info(info: dict) -> dict:
     """Reduziert die große Menge an Metadaten auf das Nötigste."""
     return {
@@ -204,6 +222,30 @@ async def play(interaction: discord.Interaction, query: str):
     voice_client = interaction.guild.voice_client
     if not voice_client or not voice_client.is_playing():
         await play_next_in_queue(interaction.guild, initial_interaction=interaction)
+
+
+@client.tree.command(name="play-album", description="Spielt einen Song ab oder fügt ihn zur Warteschlange hinzu.")
+@app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
+async def play(interaction: discord.Interaction, query: str):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    info = get_playlist_info(query)
+    if not info:
+        return
+
+    guild_id = interaction.guild.id
+    if guild_id not in music_queues:
+        music_queues[guild_id] = {"queue": [], "now_playing_message": None}
+
+    for entry in info[1]:
+        song_info = get_info(entry["url"])
+        music_queues[guild_id]["queue"].append(minimize_info(song_info))
+
+        voice_client = interaction.guild.voice_client
+        if not voice_client or not voice_client.is_playing():
+            await play_next_in_queue(interaction.guild, initial_interaction=interaction)
+
+    await interaction.followup.send(f"Zur Warteschlange hinzugefügt: **{info[0]}**")
 
 
 @client.tree.command(name="play-next", description="Spielt einen Song ab oder fügt ihn als nächstes zur Warteschlange hinzu.")
