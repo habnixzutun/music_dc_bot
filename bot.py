@@ -1,22 +1,108 @@
-from discord import app_commands
-from dotenv import load_dotenv
 import os
 import discord
-from discord import ui
+from discord import app_commands, ui
+from dotenv import load_dotenv
 import yt_dlp
-from openpyxl.styles.numbers import NumberFormat
+import asyncio
 
 load_dotenv()
+
 try:
     OPUS_PATH = os.getenv("OPUS_PATH")
-
-    print(f"Versuche Opus von folgendem Pfad zu laden: {OPUS_PATH}")
-    discord.opus.load_opus(OPUS_PATH)
+    if not OPUS_PATH:
+        print(">>> WARNUNG: OPUS_PATH ist in der .env-Datei nicht gesetzt. Versuche automatisches Laden.")
+        discord.opus.load_opus(None)
+    else:
+        print(f"Versuche Opus von folgendem Pfad zu laden: {OPUS_PATH}")
+        discord.opus.load_opus(OPUS_PATH)
     print(">>> Opus-Bibliothek erfolgreich geladen!")
 except Exception as e:
-    print(f">>> FEHLER beim manuellen Laden von Opus: {repr(e)}")
+    print(f">>> KRITISCHER FEHLER beim Laden von Opus: {repr(e)}")
+    print(
+        ">>> Stelle sicher, dass die Opus-Bibliothek installiert ist oder der OPUS_PATH in der .env-Datei korrekt ist.")
     exit(-1)
 
+
+YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
+FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
+
+music_queues = {}
+
+
+# --- Helferfunktionen ---
+def get_info(query: str):
+    """Sucht nach einem Song auf YouTube und gibt die Metadaten zurück."""
+    try:
+        search_query = f"ytsearch:{query}" if not query.lower().startswith("https://") else query
+        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
+            info = ydl.extract_info(search_query, download=False)
+        # Wenn es eine Playlist ist (von ytsearch), nimm den ersten Eintrag
+        if 'entries' in info:
+            info = info['entries'][0]
+        return info
+    except Exception as e:
+        print(f"Fehler bei yt-dlp: {e}")
+        return None
+
+
+def minimize_info(info: dict) -> dict:
+    """Reduziert die große Menge an Metadaten auf das Nötigste."""
+    return {
+        "url": info.get("url"),
+        "title": info.get("title") or info.get("alt_title") or info.get("fulltitle"),
+        "artist": info.get("artist") or info.get("creator") or info.get("uploader"),
+        "duration_string": info.get("duration_string", "Unbekannt")
+    }
+
+
+# --- Die View-Klasse für die Steuerungs-Buttons ---
+class MusicControlsView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(label="Pause", style=discord.ButtonStyle.secondary, emoji="⏸️")
+    async def pause_resume_button(self, interaction: discord.Interaction, button: ui.Button):
+        voice_client = interaction.guild.voice_client
+        if not voice_client or not (voice_client.is_playing() or voice_client.is_paused()):
+            await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
+            return
+
+        if voice_client.is_paused():
+            voice_client.resume()
+            button.label = "Pause"
+            button.emoji = "⏸️"
+            await interaction.response.edit_message(view=self)
+        else:
+            voice_client.pause()
+            button.label = "Fortsetzen"
+            button.emoji = "▶️"
+            await interaction.response.edit_message(view=self)
+
+    @ui.button(label="Skip", style=discord.ButtonStyle.secondary, emoji="⏭️")
+    async def skip_button(self, interaction: discord.Interaction, button: ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_playing():
+            voice_client.stop()
+            await interaction.response.send_message("Song übersprungen.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
+
+    @ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️")
+    async def stop_button(self, interaction: discord.Interaction, button: ui.Button):
+        guild_id = interaction.guild.id
+        if guild_id in music_queues:
+            music_queues[guild_id]["queue"].clear()
+
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_connected():
+            voice_client.stop()
+            await voice_client.disconnect()
+            await interaction.response.send_message("Wiedergabe gestoppt und Warteschlange geleert.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Nichts zu stoppen.", ephemeral=True)
+
+
+# --- Bot-Klasse und Events ---
 class MyClient(discord.Client):
     def __init__(self, *, intents: discord.Intents):
         super().__init__(intents=intents)
@@ -27,90 +113,70 @@ class MyClient(discord.Client):
         print(f'Eingeloggt als {self.user} und Befehle synchronisiert!')
 
 
-class MusicControlsView(ui.View):
-    def __init__(self, *, timeout=180):
-        super().__init__(timeout=timeout)
-    @ui.button(label="Prev", style=discord.ButtonStyle.secondary, emoji="⏪")
-    async def prev_button(self, interaction: discord.Interaction, button: ui.Button):
-        voice_client = interaction.guild.voice_client
-        if voice_client or not voice_client.is_playing():
-            await skip_to_prev(interaction)
-        else:
-            await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
-
-    @ui.button(label="Pause", style=discord.ButtonStyle.secondary, emoji="⏸️")
-    async def pause_button(self, interaction: discord.Interaction, button: ui.Button):
-        voice_client = interaction.guild.voice_client
-        if voice_client and voice_client.is_connected():
-            if voice_client.is_paused():
-                button.label = "Pause"
-                button.emoji = "⏸️"
-                voice_client.resume()
-                await interaction.response.edit_message(view=self)
-            else:
-                button.label = "Fortsetzen"
-                button.emoji = "▶️"
-                voice_client.pause()
-                await interaction.response.edit_message(view=self)
-        else:
-            await interaction.response.send_message("Ich bin in keinem Sprachkanal.", ephemeral=True)
-
-    @ui.button(label="Skip", style=discord.ButtonStyle.secondary, emoji="⏩")
-    async def skip_button(self, interaction: discord.Interaction, button: ui.Button):
-        voice_client = interaction.guild.voice_client
-        if voice_client or not voice_client.is_playing():
-            await skip_to_next(
-                interaction)
-        else:
-            await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
-
-    @ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️")
-    async def stop_button(self, interaction: discord.Interaction, button: ui.Button):
-        voice_client = interaction.guild.voice_client
-        if voice_client and voice_client.is_connected():
-            PREV_SONGS.clear()
-            CURRENT.clear()
-            NEXT_SONGS.clear()
-            voice_client.stop()
-            await voice_client.disconnect()
-            await interaction.response.send_message("Wiedergabe gestoppt und Kanal verlassen.", ephemeral=True)
-        else:
-            await interaction.response.send_message("Ich bin in keinem Sprachkanal.", ephemeral=True)
-
-
 intents = discord.Intents.default()
+intents.voice_states = True
 client = MyClient(intents=intents)
-YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
-FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
-
-PREV_SONGS = list()
-CURRENT = list()
-NEXT_SONGS = list()
 
 
-def get_info(query: str):
-    if query.lower().startswith("https://"):
-        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-            info = ydl.extract_info(query, download=False)
-    else:
-        with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-            info = ydl.extract_info(f"ytsearch:{query}", download=False)['entries']
-        info = info[0]
-    return info
+# --- Das Herzstück: Die Wiedergabefunktion ---
+async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.Interaction = None):
+    """Spielt den nächsten Song ab. Wird vom "after"-Callback immer wieder aufgerufen."""
+    guild_id = guild.id
+    if guild_id in music_queues and music_queues[guild_id]["queue"]:
+        current_song_info = music_queues[guild_id]["queue"].pop(0)
+
+        source = discord.FFmpegPCMAudio(current_song_info['url'], **FFMPEG_OPTIONS)
+        voice_client = guild.voice_client
+
+        if not voice_client:
+            if initial_interaction and initial_interaction.user.voice:
+                try:
+                    voice_client = await initial_interaction.user.voice.channel.connect()
+                except Exception as e:
+                    print(f"Fehler beim Verbinden mit dem Sprachkanal: {e}")
+                    return
+            else:
+                return
+
+        after_callback = lambda e: client.loop.create_task(play_next_in_queue(guild, initial_interaction))
+        voice_client.play(source, after=after_callback, bitrate=256)
+
+        content = f"▶️ Spiele jetzt: **{current_song_info['title']} - {current_song_info['artist']}**  `[{current_song_info['duration_string']}]`"
+        view = MusicControlsView()
+
+        try:
+            if initial_interaction and not initial_interaction.response.is_done():
+                await initial_interaction.followup.send(content, view=view)
+                msg = await initial_interaction.original_response()
+                music_queues[guild_id]["now_playing_message"] = msg
+            elif "now_playing_message" in music_queues[guild_id]:
+                msg = music_queues[guild_id]["now_playing_message"]
+                await msg.edit(content=content, view=view)
+        except (discord.errors.NotFound, AttributeError) as e:
+            print(f"Konnte 'Now Playing'-Nachricht nicht finden/bearbeiten, sende neue. Fehler: {e}")
+            channel = initial_interaction.channel if initial_interaction else guild.text_channels[0]
+            try:
+                msg = await channel.send(content, view=view)
+                music_queues[guild_id]["now_playing_message"] = msg
+            except Exception as e:
+                print(f"Konnte keine neue 'Now Playing'-Nachricht senden. Fehler: {e}")
 
 
-async def _join(interaction: discord.Interaction):
+# --- Slash-Befehle ---
+@client.tree.command(name="join", description="Der Bot betritt deinen aktuellen Sprachkanal.")
+async def join(interaction: discord.Interaction):
     if not interaction.user.voice:
-        await interaction.response.send_message("Du befindest dich in keinem Sprachkanal, dem ich beitreten könnte.",
-                                                ephemeral=True)
-        return None
+        await interaction.response.send_message("Du befindest dich in keinem Sprachkanal.", ephemeral=True)
+        return
 
     voice_channel = interaction.user.voice.channel
     await voice_channel.connect()
-    return voice_channel
+    await interaction.response.send_message(f"Erfolgreich dem Kanal `{voice_channel.name}` beigetreten!",
+                                            ephemeral=True)
 
 
-async def _leave(interaction: discord.Interaction):
+@client.tree.command(name="leave", description="Der Bot verlässt den Sprachkanal.")
+async def leave(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
     if voice_client and voice_client.is_connected():
         await voice_client.disconnect()
@@ -119,142 +185,56 @@ async def _leave(interaction: discord.Interaction):
         await interaction.response.send_message("Ich bin derzeit in keinem Sprachkanal.", ephemeral=True)
 
 
-def minimize_info(info: dict) -> dict:
-    return {
-        "url": info.get("url"),
-        "title": info.get("title"),
-        "artist": info.get("artist"),
-        "alt_title": info.get("alt_title"),
-        "uploader": info.get("uploader"),
-        "fulltitle": info.get("fulltitle"),
-        "creator": info.get("creator"),
-        "duration_string": info.get("duration_string")
-    }
-
-
-async def _add_next(query: str):
-    info = get_info(query)
-    if not info:
-        await interaction.followup.send(f"Ich konnte den Song leider nicht finden")
-        return
-    NEXT_SONGS.insert(0, minimize_info(info))
-
-
-async def _add_last(query: str):
-    info = get_info(query)
-    if not info:
-        await interaction.followup.send(f"Ich konnte den Song leider nicht finden")
-        return
-    NEXT_SONGS.append(minimize_info(info))
-
-
-async def skip_to_next(interaction: discord.Interaction):
-    if NEXT_SONGS:
-        if CURRENT:
-            PREV_SONGS.insert(0, CURRENT.pop(0))
-        CURRENT.insert(0, NEXT_SONGS.pop(0))
-    else:
-        await interaction.response.send_message("Es gibt keinen nächsten Song")
-        return
-    await _play(interaction)
-
-
-async def skip_to_prev(interaction: discord.Interaction):
-    if PREV_SONGS:
-        if CURRENT:
-            NEXT_SONGS.insert(0, CURRENT.pop(0))
-        CURRENT.insert(0, PREV_SONGS.pop(0))
-    else:
-        await interaction.response.send_message("Es gibt keinen vorherigen Song")
-        return
-    await _play(interaction)
-
-
-async def _play(interaction: discord.Interaction):
-    info = CURRENT[0]
-    voice_client = interaction.guild.voice_client
-    if not voice_client:
-        await _join(interaction)
-        voice_client = interaction.guild.voice_client
-
-    try:
-
-        url = info['url']
-        source = discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS)
-
-        if voice_client.is_playing():
-            voice_client.stop()
-        voice_client.play(source, bitrate=256)
-
-        view = MusicControlsView()
-        artist = info.get("artist")
-        if not artist:
-            artist = info.get("creator")
-        if not artist:
-            artist = info.get("uploader")
-        title = info.get("title")
-        if not title:
-            title = info.get("alt_title")
-        if not title:
-            title = info.get("fulltitle")
-        duration = info.get("duration_string", "")
-        try:
-            await interaction.followup.send(f"▶️ Spiele jetzt: **{title} - {artist}**  `[{duration}]`", view=view)
-        except discord.errors.NotFound:
-            await interaction.response.edit_message(content=f"▶️ Spiele jetzt: **{title} - {artist}**  `[{duration}]`")
-
-
-
-    except Exception as e:
-        print(f"Ein detaillierter Fehler ist aufgetreten: {repr(e)}")
-        print(f"Fehlertyp: {type(e)}")
-        await interaction.followup.send("Ein Fehler ist beim Verarbeiten des Songs aufgetreten. Bitte sieh im Terminal nach Details.")
-
-
-@client.tree.command(name="join", description="Der Bot betritt deinen aktuellen Sprachkanal.")
-async def join(interaction: discord.Interaction):
-    voice_channel = await _join(interaction)
-    if not voice_channel:
-        return
-    await interaction.response.send_message(f"Erfolgreich dem Kanal `{voice_channel.name}` beigetreten!",
-                                            ephemeral=True)
-
-@client.tree.command(name="leave", description="Der Bot verlässt den Sprachkanal.")
-async def leave(interaction: discord.Interaction):
-    await _leave(interaction)
-
-
-@client.tree.command(name="play", description="Spielt einen Song von YouTube ab.")
+@client.tree.command(name="play", description="Spielt einen Song ab oder fügt ihn zur Warteschlange hinzu.")
 @app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
 async def play(interaction: discord.Interaction, query: str):
-    await interaction.response.defer()
-    await _add_next(query)
-    await skip_to_next(interaction)
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    info = get_info(query)
+    if not info:
+        await interaction.followup.send("Konnte den Song nicht finden.")
+        return
+
+    guild_id = interaction.guild.id
+    if guild_id not in music_queues:
+        music_queues[guild_id] = {"queue": [], "now_playing_message": None}
+
+    music_queues[guild_id]["queue"].append(minimize_info(info))
+    await interaction.followup.send(f"Zur Warteschlange hinzugefügt: **{info.get('title')}**")
+
+    voice_client = interaction.guild.voice_client
+    if not voice_client or not voice_client.is_playing():
+        await play_next_in_queue(interaction.guild, initial_interaction=interaction)
 
 
-@client.tree.command(name="play-next", description="Fügt einen Song am Anfang der Warteschlange ein")
-@app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
-async def play_next(interaction: discord.Interaction, query: str):
-    await _add_next(query)
-
-
-@client.tree.command(name="play-last", description="Fügt einen Song am Ende der Warteschlange ein")
-@app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
-async def play_last(interaction: discord.Interaction, query: str):
-    await _add_last(query)
-
-
-@client.tree.command(name="skip", description="Überspringe den aktuellen Song")
+@client.tree.command(name="skip", description="Überspringt den aktuellen Song.")
 async def skip(interaction: discord.Interaction):
-    await skip_to_next(interaction)
+    voice_client = interaction.guild.voice_client
+    if voice_client and voice_client.is_playing():
+        voice_client.stop()
+        await interaction.response.send_message("Song übersprungen.", ephemeral=True)
+    else:
+        await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
 
 
-@client.tree.command(name="prev", description="Springe zum vorherigen Song")
-async def prev(interaction: discord.Interaction):
-    await skip_to_next(interaction)
+@client.tree.command(name="stop", description="Stoppt die Wiedergabe und leert die Warteschlange.")
+async def stop(interaction: discord.Interaction):
+    guild_id = interaction.guild.id
+    if guild_id in music_queues:
+        music_queues[guild_id]["queue"].clear()
 
+    voice_client = interaction.guild.voice_client
+    if voice_client and voice_client.is_connected():
+        voice_client.stop()
+        await voice_client.disconnect()
+        await interaction.response.send_message("Wiedergabe gestoppt und Warteschlange geleert.", ephemeral=True)
+    else:
+        await interaction.response.send_message("Nichts zu stoppen.", ephemeral=True)
 
 
 if __name__ == '__main__':
     dc_token = os.getenv('DC_TOKEN')
-    client.run(dc_token)
+    if not dc_token:
+        print("KRITISCHER FEHLER: DC_TOKEN wurde nicht in der .env-Datei gefunden.")
+    else:
+        client.run(dc_token)
