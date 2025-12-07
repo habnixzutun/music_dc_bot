@@ -3,7 +3,6 @@ import discord
 from discord import app_commands, ui
 from dotenv import load_dotenv
 import yt_dlp
-import asyncio
 
 load_dotenv()
 
@@ -201,6 +200,27 @@ async def play(interaction: discord.Interaction, query: str):
 
     music_queues[guild_id]["queue"].append(minimize_info(info))
     await interaction.followup.send(f"Zur Warteschlange hinzugefügt: **{info.get('title')}**")
+
+    voice_client = interaction.guild.voice_client
+    if not voice_client or not voice_client.is_playing():
+        await play_next_in_queue(interaction.guild, initial_interaction=interaction)
+
+
+@client.tree.command(name="play-next", description="Spielt einen Song ab oder fügt ihn als nächstes zur Warteschlange hinzu.")
+@app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
+async def play_next(interaction: discord.Interaction, query: str):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    info = get_info(query)
+    if not info:
+        await interaction.followup.send("Konnte den Song nicht finden.")
+        return
+
+    guild_id = interaction.guild.id
+    if guild_id not in music_queues:
+        music_queues[guild_id] = {"queue": [], "now_playing_message": None}
+
+    music_queues[guild_id]["queue"].insert(0, minimize_info(info))
+    await interaction.followup.send(f"Als nächstes zur Warteschlange hinzugefügt: **{info.get('title')}**")
 
     voice_client = interaction.guild.voice_client
     if not voice_client or not voice_client.is_playing():
