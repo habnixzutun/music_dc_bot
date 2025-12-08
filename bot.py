@@ -1,8 +1,11 @@
 import os
+import random
+
 import discord
 from discord import app_commands, ui
 from dotenv import load_dotenv
 import yt_dlp
+import time
 
 load_dotenv()
 
@@ -53,10 +56,11 @@ def get_playlist_info(query: str):
             info = ydl.extract_info(search_query, download=False)
 
         if 'entries' in info:
-            title = info.get('title')
-            channel = info.get('channel')
+            title = info.get('title', "")
+            channel = info.get('channel', "")
             # Es ist eine Playlist, gib die Liste der Video-Infos zurück
-            return title + " - " + channel, info['entries']
+            return (f"{title if title else ''}{' - ' if title and channel else ''}{channel if channel else ''}",
+                    info['entries'])
         return None
     except Exception as e:
         print(f"Fehler beim Abrufen der Playlist-Info: {e}")
@@ -69,7 +73,7 @@ def minimize_info(info: dict) -> dict:
         "url": info.get("url"),
         "title": info.get("title") or info.get("alt_title") or info.get("fulltitle"),
         "artist": info.get("artist") or info.get("creator") or info.get("uploader"),
-        "duration_string": info.get("duration_string", "Unbekannt")
+        "duration_string": info.get("duration_string", "")
     }
 
 
@@ -241,6 +245,7 @@ async def play(interaction: discord.Interaction, query: str):
     for entry in info[1]:
         song_info = get_info(entry["url"])
         music_queues[guild_id]["queue"].append(minimize_info(song_info))
+        time.sleep(5 + random.randint(-50, 50) / 100)
 
         voice_client = interaction.guild.voice_client
         if not voice_client or not voice_client.is_playing():
