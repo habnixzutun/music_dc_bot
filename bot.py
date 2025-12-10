@@ -31,6 +31,7 @@ YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True', "plugin_dirs": yt_dl
 FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
 music_queues = {}
+MAX_PREV_SONGS_SIZE = 500
 
 
 # --- Helferfunktionen ---
@@ -101,6 +102,20 @@ class MusicControlsView(ui.View):
             music_queues[interaction.guild.id]["Loop"] = False
             await interaction.response.send_message("Endlosschleife ist jetzt deaktiviert", ephemeral=True)
 
+    @ui.button(label="Prev", style=discord.ButtonStyle.secondary, emoji="⏮️")
+    async def prev_button(self, interaction: discord.Interaction, button: ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client:
+            if len(music_queues[interaction.guild.id]["prev_songs"]) < 2:
+                await interaction.response.send_message("Es gibt keinen vorherigen Song", ephemeral=True)
+                return
+            music_queues[interaction.guild.id]["queue"].insert(0, music_queues[interaction.guild.id]["prev_songs"].pop(-1))
+            if voice_client and voice_client.is_playing():
+                music_queues[interaction.guild.id]["queue"].insert(0, music_queues[interaction.guild.id]["prev_songs"].pop(-1))
+                voice_client.stop()
+            await interaction.response.send_message("Zum vorherigen Song gesprungen", ephemeral=True)
+        else:
+            await interaction.response.send_message("Etwas ist schiefgelaufen")
 
     @ui.button(label="Pause", style=discord.ButtonStyle.secondary, emoji="⏸️")
     async def pause_resume_button(self, interaction: discord.Interaction, button: ui.Button):
@@ -164,12 +179,16 @@ client = MyClient(intents=intents)
 async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.Interaction = None):
     """Spielt den nächsten Song ab. Wird vom "after"-Callback immer wieder aufgerufen."""
     guild_id = guild.id
+    if not music_queues[guild_id].get("prev_songs"):
+        music_queues[guild_id]["prev_songs"] = []
     if guild_id in music_queues and music_queues[guild_id]["queue"] or music_queues[guild_id]["current_song"]:
         if music_queues[guild_id].get("Loop") is not True:
             current_song_info = music_queues[guild_id]["queue"].pop(0)
-            music_queues[guild_id]["current_song"] = current_song_info
+            music_queues[guild_id]["prev_songs"].append(current_song_info)
+            if len(music_queues[guild_id]["prev_songs"]) >= MAX_PREV_SONGS_SIZE:
+                music_queues[guild_id]["prev_songs"].pop(0)
         else:
-            current_song_info = music_queues[guild_id]["current_song"]
+            current_song_info = music_queues[guild_id]["prev_songs"][-1]
 
         if current_song_info["url"].startswith("temp_audio/"):
             source = discord.FFmpegPCMAudio(current_song_info['url'])
@@ -331,16 +350,33 @@ async def play_file(interaction: discord.Interaction, datei: discord.Attachment)
         await play_next_in_queue(interaction.guild, initial_interaction=interaction)
 
 
-
-
 @client.tree.command(name="skip", description="Überspringt den aktuellen Song.")
 async def skip(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
     if voice_client and voice_client.is_playing():
         voice_client.stop()
-        await interaction.response.send_message("Song übersprungen.", ephemeral=True)
+        await interaction.response.send_message("Song übersprungen", ephemeral=True)
     else:
-        await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
+        await interaction.response.send_message("Es wird gerade nichts abgespielt", ephemeral=True)
+
+
+@client.tree.command(name="prev", description="Springt zum vorherigen Song.")
+async def skip(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+    if voice_client:
+        if len(music_queues[interaction.guild.id]["prev_songs"]) < 2:
+            await interaction.response.send_message("Es gibt keinen vorherigen Song", ephemeral=True)
+            return
+
+        music_queues[interaction.guild.id]["queue"].insert(0, music_queues[interaction.guild.id]["prev_songs"].pop(-1))
+        if voice_client and voice_client.is_playing():
+            music_queues[interaction.guild.id]["queue"].insert(0, music_queues[interaction.guild.id]["prev_songs"].pop(-1))
+            voice_client.stop()
+
+        await interaction.response.send_message("Zum vorherigen Song gesprungen", ephemeral=True)
+    else:
+        await interaction.response.send_message("Etwas ist schiefgelaufen")
+
 
 
 @client.tree.command(name="stop", description="Stoppt die Wiedergabe und leert die Warteschlange.")
