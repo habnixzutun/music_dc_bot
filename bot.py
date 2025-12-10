@@ -1,10 +1,13 @@
 import os
 import random
+import time
+
 import discord
 from discord import app_commands, ui
 from dotenv import load_dotenv
 import yt_dlp
 import yt_dlp_plugins
+from functools import cache
 import asyncio
 
 load_dotenv()
@@ -32,10 +35,12 @@ music_queues = {}
 
 
 # --- Helferfunktionen ---
+@cache
 def get_info(query: str):
     """Sucht nach einem Song auf YouTube und gibt die Metadaten zurück."""
     try:
         search_query = f"ytsearch:{query}" if not query.lower().startswith("https://") else query
+        print("getting new url")
         with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
             info = ydl.extract_info(search_query, download=False)
         if 'entries' in info:
@@ -45,7 +50,7 @@ def get_info(query: str):
         print(f"Fehler bei yt-dlp: {e}")
         return None
 
-
+@cache
 def get_playlist_info(query: str):
     """Holt sich die Infos für eine Playlist oder einen einzelnen Song und gibt immer eine Liste zurück."""
     playlist_ydl_options = {'format': 'bestaudio', 'extract_flat': True, 'quiet': True}
@@ -263,17 +268,22 @@ async def play(interaction: discord.Interaction, query: str):
         music_queues[guild_id] = {"queue": [], "now_playing_message": None}
 
     for entry in info[1]:
+        x = time.time()
         song_info = get_info(entry["url"])
+        time_delta = time.time() - x
+        print(f"Ladezeit {time_delta:.2f} sekunden")
         if not song_info:
             await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.", ephemeral=True)
-            await asyncio.sleep(5 + random.randint(-50, 50) / 100)
+            if time_delta > 0.1:
+                await asyncio.sleep(5 + random.randint(-50, 50) / 100)
             continue
         music_queues[guild_id]["queue"].append(minimize_info(song_info))
 
         voice_client = interaction.guild.voice_client
         if not voice_client or not voice_client.is_playing():
             await play_next_in_queue(interaction.guild, initial_interaction=interaction)
-        await asyncio.sleep(5 + random.randint(-50, 50) / 100)
+        if time_delta > 0.1:
+            await asyncio.sleep(5 + random.randint(-50, 50) / 100)
 
     await interaction.followup.send(f"Zur Warteschlange hinzugefügt: **{info[0]}**")
 
