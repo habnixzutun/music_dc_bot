@@ -326,7 +326,7 @@ async def play_file(interaction: discord.Interaction, datei: discord.Attachment)
         "uploader": interaction.user.name,
         "duration": datei.duration
     }))
-    await interaction.followup.send(f"Als nächstes zur Warteschlange hinzugefügt: **{file_path.split("/")[-1].split(".")[0]}**")
+    await interaction.followup.send(f"Als nächstes zur Warteschlange hinzugefügt: **{file_path.split('/')[-1].split('.')[0]}**")
     voice_client = interaction.guild.voice_client
     if not voice_client or not voice_client.is_playing():
         await play_next_in_queue(interaction.guild, initial_interaction=interaction)
