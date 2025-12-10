@@ -172,7 +172,10 @@ async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.
         else:
             current_song_info = music_queues[guild_id]["current_song"]
 
-        source = discord.FFmpegPCMAudio(current_song_info['url'], **FFMPEG_OPTIONS)
+        if current_song_info["url"].startswith("temp_audio/"):
+            source = discord.FFmpegPCMAudio(current_song_info['url'])
+        else:
+            source = discord.FFmpegPCMAudio(current_song_info['url'], **FFMPEG_OPTIONS)
         voice_client = guild.voice_client
 
         if not voice_client:
@@ -186,7 +189,7 @@ async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.
                 return
 
         after_callback = lambda e: client.loop.create_task(play_next_in_queue(guild, initial_interaction))
-        voice_client.play(source, after=after_callback, bitrate=256)
+        voice_client.play(source, after=after_callback, bitrate=256, signal_type="music")
 
         content = f"▶️ Spiele jetzt: **{current_song_info['title']} - {current_song_info['artist']}**  `[{current_song_info['duration_string']}]`"
         view = MusicControlsView()
@@ -307,6 +310,28 @@ async def play_next(interaction: discord.Interaction, query: str):
     voice_client = interaction.guild.voice_client
     if not voice_client or not voice_client.is_playing():
         await play_next_in_queue(interaction.guild, initial_interaction=interaction)
+
+@client.tree.command(name="play-file", description="Spielt eine hochgeladene Audiodatei ab.")
+# Hier definieren wir den Parameter 'datei', den der Nutzer hochladen muss.
+@app_commands.describe(datei="Die Audiodatei, die du abspielen möchtest.")
+async def play_file(interaction: discord.Interaction, datei: discord.Attachment):
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    file_path = f"temp_audio/{datei.filename}"
+    await datei.save(file_path)
+    if not music_queues.get(interaction.guild.id):
+        music_queues[interaction.guild.id] = {"queue": [], "now_playing_message": None}
+    music_queues[interaction.guild.id]["queue"].append(minimize_info({
+        "url": file_path,
+        "title": file_path.split("/")[-1].split(".")[0],
+        "uploader": interaction.user.name,
+        "duration": datei.duration
+    }))
+    await interaction.followup.send(f"Als nächstes zur Warteschlange hinzugefügt: **{file_path.split("/")[-1].split(".")[0]}**")
+    voice_client = interaction.guild.voice_client
+    if not voice_client or not voice_client.is_playing():
+        await play_next_in_queue(interaction.guild, initial_interaction=interaction)
+
+
 
 
 @client.tree.command(name="skip", description="Überspringt den aktuellen Song.")

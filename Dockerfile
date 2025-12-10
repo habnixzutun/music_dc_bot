@@ -17,6 +17,7 @@ COPY requirements.txt .
 # Installiere die Python-Abhängigkeiten
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install -U https://github.com/pukkandan/yt-dlp-YTAgeGateBypass/archive/master.zip
+RUN pip install --upgrade certifi
 
 # Kopiere alle restlichen Dateien deines Projekts in das Arbeitsverzeichnis
 COPY . .
