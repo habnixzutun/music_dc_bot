@@ -5,7 +5,6 @@ from discord import app_commands, ui
 from dotenv import load_dotenv
 import yt_dlp
 import yt_dlp_plugins
-import time
 
 load_dotenv()
 
@@ -81,6 +80,23 @@ class MusicControlsView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
+
+    @ui.button(label="Loop", style=discord.ButtonStyle.secondary, emoji="🔄")
+    async def loop_button(self, interaction: discord.Interaction, button: ui.Button):
+        voice_client = interaction.guild.voice_client
+        if not voice_client or not (voice_client.is_playing() or voice_client.is_paused()) or not music_queues.get(interaction.guild.id):
+            await interaction.response.send_message("Es wird gerade nichts abgespielt.", ephemeral=True)
+            return
+
+        loop = music_queues[interaction.guild.id].get("Loop")
+        if loop is not True:
+            music_queues[interaction.guild.id]["Loop"] = True
+            await interaction.response.send_message("Endlosschleife ist jetzt aktiviert", ephemeral=True)
+        else:
+            music_queues[interaction.guild.id]["Loop"] = False
+            await interaction.response.send_message("Endlosschleife ist jetzt deaktiviert", ephemeral=True)
+
+
     @ui.button(label="Pause", style=discord.ButtonStyle.secondary, emoji="⏸️")
     async def pause_resume_button(self, interaction: discord.Interaction, button: ui.Button):
         voice_client = interaction.guild.voice_client
@@ -143,8 +159,12 @@ client = MyClient(intents=intents)
 async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.Interaction = None):
     """Spielt den nächsten Song ab. Wird vom "after"-Callback immer wieder aufgerufen."""
     guild_id = guild.id
-    if guild_id in music_queues and music_queues[guild_id]["queue"]:
-        current_song_info = music_queues[guild_id]["queue"].pop(0)
+    if guild_id in music_queues and music_queues[guild_id]["queue"] or music_queues[guild_id]["current_song"]:
+        if music_queues[guild_id].get("Loop") is not True:
+            current_song_info = music_queues[guild_id]["queue"].pop(0)
+            music_queues[guild_id]["current_song"] = current_song_info
+        else:
+            current_song_info = music_queues[guild_id]["current_song"]
 
         source = discord.FFmpegPCMAudio(current_song_info['url'], **FFMPEG_OPTIONS)
         voice_client = guild.voice_client
@@ -213,7 +233,7 @@ async def play(interaction: discord.Interaction, query: str):
 
     info = get_info(query)
     if not info:
-        await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.")
+        await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.", ephemeral=True)
         return
 
     guild_id = interaction.guild.id
@@ -244,7 +264,7 @@ async def play(interaction: discord.Interaction, query: str):
     for entry in info[1]:
         song_info = get_info(entry["url"])
         if not song_info:
-            await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.")
+            await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.", ephemeral=True)
             await asyncio.sleep(5 + random.randint(-50, 50) / 100)
             continue
         music_queues[guild_id]["queue"].append(minimize_info(song_info))
@@ -263,7 +283,7 @@ async def play_next(interaction: discord.Interaction, query: str):
     await interaction.response.defer(ephemeral=True, thinking=True)
     info = get_info(query)
     if not info:
-        await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.")
+        await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.", ephemeral=True)
         return
 
     guild_id = interaction.guild.id
@@ -298,9 +318,27 @@ async def stop(interaction: discord.Interaction):
     if voice_client and voice_client.is_connected():
         voice_client.stop()
         await voice_client.disconnect()
-        await interaction.response.send_message("Wiedergabe gestoppt und Warteschlange geleert.", ephemeral=True)
+        await interaction.response.send_message("Wiedergabe gestoppt und Warteschlange geleert.")
     else:
         await interaction.response.send_message("Nichts zu stoppen.", ephemeral=True)
+
+
+@client.tree.command(name="loop-on", description="Stoppt die Wiedergabe und leert die Warteschlange.")
+async def loop_on(interaction: discord.Interaction):
+    music_queues[interaction.guild.id]["Loop"] = True
+    await interaction.response.send_message("Endlosschleife ist aktiviert", ephemeral=True)
+
+
+@client.tree.command(name="loop-off", description="Stoppt die Wiedergabe und leert die Warteschlange.")
+async def loop_off(interaction: discord.Interaction):
+    music_queues[interaction.guild.id]["Loop"] = False
+    await interaction.response.send_message("Endlosschleife ist deaktiviert", ephemeral=True)
+
+
+@client.tree.command(name="loop-status", description="Stoppt die Wiedergabe und leert die Warteschlange.")
+async def loop_status(interaction: discord.Interaction):
+    loop = music_queues[interaction.guild.id].get("Loop")
+    await interaction.response.send_message(f"Endlosschleife ist {'de' if loop is not True else ''}aktiviert", ephemeral=True)
 
 
 if __name__ == '__main__':
