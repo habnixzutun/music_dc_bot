@@ -5,6 +5,7 @@ from discord import app_commands, ui
 from dotenv import load_dotenv
 import yt_dlp
 import yt_dlp_plugins
+import asyncio
 
 load_dotenv()
 
