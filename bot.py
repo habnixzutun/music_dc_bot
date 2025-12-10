@@ -378,6 +378,8 @@ async def loop_status(interaction: discord.Interaction):
 
 
 if __name__ == '__main__':
+    if not os.path.isdir("temp_audio"):
+        os.mkdir("temp_audio")
     dc_token = os.getenv('DC_TOKEN')
     if not dc_token:
         print("KRITISCHER FEHLER: DC_TOKEN wurde nicht in der .env-Datei gefunden.")
