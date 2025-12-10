@@ -245,14 +245,14 @@ async def play(interaction: discord.Interaction, query: str):
         song_info = get_info(entry["url"])
         if not song_info:
             await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.")
-            time.sleep(5 + random.randint(-50, 50) / 100)
+            await asyncio.sleep(5 + random.randint(-50, 50) / 100)
             continue
         music_queues[guild_id]["queue"].append(minimize_info(song_info))
 
         voice_client = interaction.guild.voice_client
         if not voice_client or not voice_client.is_playing():
             await play_next_in_queue(interaction.guild, initial_interaction=interaction)
-        time.sleep(5 + random.randint(-50, 50) / 100)
+        await asyncio.sleep(5 + random.randint(-50, 50) / 100)
 
     await interaction.followup.send(f"Zur Warteschlange hinzugefügt: **{info[0]}**")
 
