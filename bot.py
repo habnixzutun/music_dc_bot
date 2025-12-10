@@ -1,10 +1,10 @@
 import os
 import random
-
 import discord
 from discord import app_commands, ui
 from dotenv import load_dotenv
 import yt_dlp
+import yt_dlp_plugins
 import time
 
 load_dotenv()
@@ -25,7 +25,7 @@ except Exception as e:
     exit(-1)
 
 
-YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True'}
+YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True', "plugin_dirs": yt_dlp_plugins.__path__}
 FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
 music_queues = {}
@@ -38,7 +38,6 @@ def get_info(query: str):
         search_query = f"ytsearch:{query}" if not query.lower().startswith("https://") else query
         with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
             info = ydl.extract_info(search_query, download=False)
-        # Wenn es eine Playlist ist (von ytsearch), nimm den ersten Eintrag
         if 'entries' in info:
             info = info['entries'][0]
         return info
@@ -140,7 +139,7 @@ intents.voice_states = True
 client = MyClient(intents=intents)
 
 
-# --- Das Herzstück: Die Wiedergabefunktion ---
+# --- Die Wiedergabefunktion ---
 async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.Interaction = None):
     """Spielt den nächsten Song ab. Wird vom "after"-Callback immer wieder aufgerufen."""
     guild_id = guild.id
@@ -214,7 +213,7 @@ async def play(interaction: discord.Interaction, query: str):
 
     info = get_info(query)
     if not info:
-        await interaction.followup.send("Konnte den Song nicht finden.")
+        await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.")
         return
 
     guild_id = interaction.guild.id
@@ -244,12 +243,16 @@ async def play(interaction: discord.Interaction, query: str):
 
     for entry in info[1]:
         song_info = get_info(entry["url"])
+        if not song_info:
+            await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.")
+            time.sleep(5 + random.randint(-50, 50) / 100)
+            continue
         music_queues[guild_id]["queue"].append(minimize_info(song_info))
-        time.sleep(5 + random.randint(-50, 50) / 100)
 
         voice_client = interaction.guild.voice_client
         if not voice_client or not voice_client.is_playing():
             await play_next_in_queue(interaction.guild, initial_interaction=interaction)
+        time.sleep(5 + random.randint(-50, 50) / 100)
 
     await interaction.followup.send(f"Zur Warteschlange hinzugefügt: **{info[0]}**")
 
@@ -260,7 +263,7 @@ async def play_next(interaction: discord.Interaction, query: str):
     await interaction.response.defer(ephemeral=True, thinking=True)
     info = get_info(query)
     if not info:
-        await interaction.followup.send("Konnte den Song nicht finden.")
+        await interaction.followup.send("Konnte den Song nicht finden oder der Song ist Altersbeschränkt.")
         return
 
     guild_id = interaction.guild.id
