@@ -1,14 +1,13 @@
+from discord import app_commands, ui
+from dotenv import load_dotenv
+from functools import cache
+import asyncio
+import discord
 import os
 import random
 import time
-
-import discord
-from discord import app_commands, ui
-from dotenv import load_dotenv
 import yt_dlp
 import yt_dlp_plugins
-from functools import cache
-import asyncio
 
 load_dotenv()
 
