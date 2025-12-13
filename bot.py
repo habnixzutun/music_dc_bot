@@ -73,11 +73,23 @@ def get_playlist_info(query: str):
 
 def minimize_info(info: dict) -> dict:
     """Reduziert die große Menge an Metadaten auf das Nötigste."""
+    url: str = info.get("url")
+    title: str =  info.get("title") or info.get("alt_title") or info.get("fulltitle", "")
+    artist: str = info.get("artist") or info.get("creator") or info.get("uploader", "")
+    duration_string: str =  info.get("duration_string", "")
+
+    if title and artist:
+        title = title.replace(artist, "")
+        title = title.strip()
+        if title.startswith("-") or title.endswith("-"):
+            title = title.replace("-", "")
+            title = title.strip()
+
     return {
-        "url": info.get("url"),
-        "title": info.get("title") or info.get("alt_title") or info.get("fulltitle"),
-        "artist": info.get("artist") or info.get("creator") or info.get("uploader"),
-        "duration_string": info.get("duration_string", "")
+        "url": url,
+        "title": title,
+        "artist": artist,
+        "duration_string": duration_string
     }
 
 
