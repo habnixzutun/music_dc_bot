@@ -161,6 +161,7 @@ class MusicControlsView(ui.View):
         guild_id = interaction.guild.id
         if guild_id in music_queues:
             music_queues[guild_id]["queue"].clear()
+            music_queues[guild_id]["prev_songs"].clear()
 
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.is_connected():
@@ -253,16 +254,6 @@ async def join(interaction: discord.Interaction):
     await voice_channel.connect()
     await interaction.response.send_message(f"Erfolgreich dem Kanal `{voice_channel.name}` beigetreten!",
                                             ephemeral=True)
-
-
-@client.tree.command(name="leave", description="Der Bot verlässt den Sprachkanal.")
-async def leave(interaction: discord.Interaction):
-    voice_client = interaction.guild.voice_client
-    if voice_client and voice_client.is_connected():
-        await voice_client.disconnect()
-        await interaction.response.send_message("Sprachkanal verlassen.", ephemeral=True)
-    else:
-        await interaction.response.send_message("Ich bin derzeit in keinem Sprachkanal.", ephemeral=True)
 
 
 @client.tree.command(name="play", description="Spielt einen Song ab oder fügt ihn zur Warteschlange hinzu.")
@@ -391,11 +382,12 @@ async def skip(interaction: discord.Interaction):
 
 
 
-@client.tree.command(name="stop", description="Stoppt die Wiedergabe und leert die Warteschlange.")
-async def stop(interaction: discord.Interaction):
+@client.tree.command(name="leave", description="Stoppt die Wiedergabe und leert die Warteschlange.")
+async def leave(interaction: discord.Interaction):
     guild_id = interaction.guild.id
     if guild_id in music_queues:
         music_queues[guild_id]["queue"].clear()
+        music_queues[guild_id]["prev_songs"].clear()
 
     voice_client = interaction.guild.voice_client
     if voice_client and voice_client.is_connected():
