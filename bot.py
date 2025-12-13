@@ -181,7 +181,7 @@ async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.
     guild_id = guild.id
     if not music_queues[guild_id].get("prev_songs"):
         music_queues[guild_id]["prev_songs"] = []
-    if guild_id in music_queues and music_queues[guild_id]["queue"] or music_queues[guild_id]["current_song"]:
+    if guild_id in music_queues and music_queues[guild_id]["queue"] or music_queues[guild_id].get("current_song"):
         if music_queues[guild_id].get("Loop") is not True:
             current_song_info = music_queues[guild_id]["queue"].pop(0)
             music_queues[guild_id]["prev_songs"].append(current_song_info)
