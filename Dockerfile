@@ -18,6 +18,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install -U https://github.com/pukkandan/yt-dlp-YTAgeGateBypass/archive/master.zip
 RUN pip install --upgrade certifi
+RUN curl -fsSL https://deno.land/install.sh | sh -s -- -y
 
 # Kopiere alle restlichen Dateien deines Projekts in das Arbeitsverzeichnis
 COPY . .
