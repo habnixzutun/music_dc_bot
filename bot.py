@@ -1,6 +1,7 @@
 from discord import app_commands, ui
 from dotenv import load_dotenv
 from functools import cache
+from math import log10
 import asyncio
 import discord
 import os
@@ -91,6 +92,44 @@ def minimize_info(info: dict) -> dict:
         "artist": artist,
         "duration_string": duration_string
     }
+
+
+def format_queue(prev: list[dict], queue: list[dict], max_len: int = 30, max_width: int = 35) -> str:
+    prev: list[str] = [f"{x['title']} - {x['artist']}" for x in prev]
+    prev = [x[:max_width - 3] for x in prev]
+
+    queue: list[str] = [f"{x['title']} - {x['artist']}" for x in queue]
+    queue = [x[:max_width - 3] for x in queue]
+
+    current = prev.pop(-1)
+
+    prev = prev[::-1]
+
+    prev_short = prev[:max_len // 3]
+    queue_short = queue[:2 * max_len // 3]
+
+
+    print(f"{prev = }")
+    print(f"{queue = }")
+
+    print(f"{prev_short = }")
+    print(f"{current = }")
+    print(f"{queue_short = }")
+
+    message = ""
+    if len(prev) != len(prev_short):
+        message += f"... {len(prev) - len(prev_short)} - weitere Songs"
+    for element in prev_short:
+        message += f"- {element}\n"
+    if current:
+        message += f"▶ {current}\n"
+    for element in queue_short:
+        message += f"- {element}\n"
+
+    if len(queue) != len(queue_short):
+        message += f"... {len(queue) - len(queue_short)} - weitere Songs"
+
+    return message
 
 
 # --- Die View-Klasse für die Steuerungs-Buttons ---
@@ -414,6 +453,19 @@ async def loop_off(interaction: discord.Interaction):
 async def loop_status(interaction: discord.Interaction):
     loop = music_queues[interaction.guild.id].get("Loop")
     await interaction.response.send_message(f"Endlosschleife ist {'de' if loop is not True else ''}aktiviert", ephemeral=True)
+
+
+@client.tree.command(name="queue", description="Zeigt bis zu 30 Elemente der aktuellen Wiedergabeliste an")
+async def queue(interaction: discord.Interaction):
+    if not music_queues.get(interaction.guild.id):
+        await interaction.response.send_message("Es gibt keine Wiedergabeliste", ephemeral=True)
+        return
+    prev = music_queues[interaction.guild.id].get("prev_songs")
+    queue = music_queues[interaction.guild.id].get("queue")
+
+
+    message = format_queue(prev, queue)
+    await interaction.response.send_message(message)
 
 
 if __name__ == '__main__':
