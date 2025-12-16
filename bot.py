@@ -118,7 +118,7 @@ def format_queue(prev: list[dict], queue: list[dict], max_len: int = 30, max_wid
 
     message = ""
     if len(prev) != len(prev_short):
-        message += f"... {len(prev) - len(prev_short)} - weitere Songs"
+        message += f"... {len(prev) - len(prev_short)} - weitere Songs\n"
     for element in prev_short:
         message += f"- {element}\n"
     if current:
@@ -127,7 +127,7 @@ def format_queue(prev: list[dict], queue: list[dict], max_len: int = 30, max_wid
         message += f"- {element}\n"
 
     if len(queue) != len(queue_short):
-        message += f"... {len(queue) - len(queue_short)} - weitere Songs"
+        message += f"... {len(queue) - len(queue_short)} - weitere Songs\n"
 
     return message
 
