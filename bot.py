@@ -206,6 +206,10 @@ class MusicControlsView(ui.View):
             voice_client.stop()
             await voice_client.disconnect()
             await interaction.response.send_message("Wiedergabe gestoppt und Warteschlange geleert.", ephemeral=True)
+            msg = music_queues[guild_id]["now_playing_message"]
+            await msg.unpin()
+            await msg.edit(view=None)
+            music_queues[guild_id].pop("now_playing_message")
         else:
             await interaction.response.send_message("Nichts zu stoppen.", ephemeral=True)
 
@@ -268,6 +272,7 @@ async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.
                 await initial_interaction.followup.send(content, view=view)
                 msg = await initial_interaction.original_response()
                 music_queues[guild_id]["now_playing_message"] = msg
+                await msg.pin()
             elif "now_playing_message" in music_queues[guild_id]:
                 msg = music_queues[guild_id]["now_playing_message"]
                 await msg.edit(content=content, view=view)
@@ -277,6 +282,7 @@ async def play_next_in_queue(guild: discord.Guild, initial_interaction: discord.
             try:
                 msg = await channel.send(content, view=view)
                 music_queues[guild_id]["now_playing_message"] = msg
+                await msg.pin()
             except Exception as e:
                 print(f"Konnte keine neue 'Now Playing'-Nachricht senden. Fehler: {e}")
 
@@ -297,7 +303,7 @@ async def join(interaction: discord.Interaction):
 @client.tree.command(name="play", description="Spielt einen Song ab oder fügt ihn zur Warteschlange hinzu.")
 @app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
 async def play(interaction: discord.Interaction, query: str):
-    await interaction.response.defer(ephemeral=True, thinking=True)
+    await interaction.response.defer(thinking=True)
 
     info = get_info(query)
     if not info:
@@ -432,6 +438,10 @@ async def leave(interaction: discord.Interaction):
         voice_client.stop()
         await voice_client.disconnect()
         await interaction.response.send_message("Wiedergabe gestoppt und Warteschlange geleert.")
+        msg = music_queues[guild_id]["now_playing_message"]
+        await msg.unpin()
+        await msg.edit(view=None)
+        music_queues[guild_id].pop("now_playing_message")
     else:
         await interaction.response.send_message("Nichts zu stoppen.", ephemeral=True)
 
