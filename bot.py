@@ -1,7 +1,6 @@
+from cachetools.func import ttl_cache
 from discord import app_commands, ui
 from dotenv import load_dotenv
-from functools import cache
-from math import log10
 import asyncio
 import discord
 import os
@@ -36,7 +35,7 @@ MAX_PREV_SONGS_SIZE = 500
 
 
 # --- Helferfunktionen ---
-@cache
+@ttl_cache(ttl=24 * 60 * 60)  # 24h
 def get_info(query: str):
     """Sucht nach einem Song auf YouTube und gibt die Metadaten zurück."""
     try:
@@ -51,7 +50,7 @@ def get_info(query: str):
         print(f"Fehler bei yt-dlp: {e}")
         return None
 
-@cache
+@ttl_cache(ttl=24 * 60 * 60)  # 24h
 def get_playlist_info(query: str):
     """Holt sich die Infos für eine Playlist oder einen einzelnen Song und gibt immer eine Liste zurück."""
     playlist_ydl_options = {'format': 'bestaudio', 'extract_flat': True, 'quiet': True}
