@@ -1,3 +1,4 @@
+from aiocache import cached
 from cachetools.func import ttl_cache
 from discord import app_commands, ui
 from dotenv import load_dotenv
@@ -5,6 +6,7 @@ import asyncio
 import discord
 import os
 import random
+import subprocess
 import time
 import yt_dlp
 import yt_dlp_plugins
@@ -28,6 +30,7 @@ except Exception as e:
 
 
 YDL_OPTIONS = {'format': 'bestaudio', 'noplaylist': 'True', "plugin_dirs": yt_dlp_plugins.__path__}
+YDL_SEARCH_OPTIONS = {"flat-playlist": "True", "skip-download": "True", "quiet": "True", "ignore-errors": "True", "get-title": "True", "plugin_dirs": yt_dlp_plugins.__path__}
 FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
 music_queues = {}
@@ -49,6 +52,42 @@ def get_info(query: str):
     except Exception as e:
         print(f"Fehler bei yt-dlp: {e}")
         return None
+
+@cached(ttl=24 * 60 * 60)
+async def get_songs(interaction: discord.Interaction, query: str) -> list[app_commands.Choice]:
+    command = [
+        'yt-dlp',
+        '--flat-playlist',
+        '--source-address', '0.0.0.0',
+        '--default-search', 'ytsearch10',
+        '--print', '%(title)s|||%(webpage_url)s',
+        query
+    ]
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        print(f"Fehler im yt-dlp CLI-Aufruf: {stderr.decode()}")
+        return []
+
+    output_lines = stdout.decode().strip().split('\n')
+
+    song_tuples = []
+    for line in output_lines:
+        if '|||' in line:
+            title, url = line.split('|||', 1)
+            song_tuples.append((title.strip(), url.strip()))
+
+    choices = [app_commands.Choice(name=i[0], value=i[1]) for i in song_tuples]
+
+    return choices
+
 
 @ttl_cache(ttl=24 * 60 * 60)  # 24h
 def get_playlist_info(query: str):
@@ -298,6 +337,7 @@ async def join(interaction: discord.Interaction):
 
 @client.tree.command(name="play", description="Spielt einen Song ab oder fügt ihn zur Warteschlange hinzu.")
 @app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
+@app_commands.autocomplete(query=get_songs)
 async def play(interaction: discord.Interaction, query: str):
     await interaction.response.defer(thinking=True)
 
@@ -320,7 +360,7 @@ async def play(interaction: discord.Interaction, query: str):
 
 @client.tree.command(name="play-album", description="Spielt einen Song ab oder fügt ihn zur Warteschlange hinzu.")
 @app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
-async def play(interaction: discord.Interaction, query: str):
+async def play_album(interaction: discord.Interaction, query: str):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
     info = get_playlist_info(query)
