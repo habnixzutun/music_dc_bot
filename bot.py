@@ -94,26 +94,22 @@ def minimize_info(info: dict) -> dict:
 
 
 def format_queue(prev: list[dict], queue: list[dict], max_len: int = 30, max_width: int = 35) -> str:
+    if not prev and not queue:
+        return "Die Wiedergabeliste ist leer"
     prev: list[str] = [f"{x['title']} - {x['artist']}" for x in prev]
     prev = [x[:max_width - 3] for x in prev]
 
     queue: list[str] = [f"{x['title']} - {x['artist']}" for x in queue]
     queue = [x[:max_width - 3] for x in queue]
 
-    current = prev.pop(-1)
+    current = ""
+    if prev:
+        current = prev.pop(-1)
 
     prev = prev[::-1]
 
     prev_short = prev[:max_len // 3]
     queue_short = queue[:2 * max_len // 3]
-
-
-    print(f"{prev = }")
-    print(f"{queue = }")
-
-    print(f"{prev_short = }")
-    print(f"{current = }")
-    print(f"{queue_short = }")
 
     message = ""
     if len(prev) != len(prev_short):
