@@ -205,6 +205,15 @@ def format_queue(prev: list[dict], queue: list[dict], max_len: int = 30, max_wid
     return message
 
 
+async def remove_old_pins(interaction: discord.Interaction):
+    pins = await interaction.channel.pins()
+
+    for pin in pins:
+        if pin.author.id == client.application_id:
+            if pin != music_queues.get(interaction.guild.id).get("now_playing_message"):
+                await pin.delete()
+
+
 # --- Die View-Klasse für die Steuerungs-Buttons ---
 class MusicControlsView(ui.View):
     def __init__(self):
@@ -549,9 +558,14 @@ async def queue(interaction: discord.Interaction):
     prev = music_queues[interaction.guild.id].get("prev_songs")
     queue = music_queues[interaction.guild.id].get("queue")
 
-
     message = format_queue(prev, queue)
     await interaction.response.send_message(message)
+
+
+@client.tree.command(name="remove-old-pins", description="Entfernt alte Pins des Bots")
+async def queue(interaction: discord.Interaction):
+    await remove_old_pins(interaction)
+    await interaction.response.send_message("Alte Pins entfernt", ephemeral=True)
 
 
 if __name__ == '__main__':
