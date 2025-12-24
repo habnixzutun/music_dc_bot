@@ -8,6 +8,7 @@ import os
 import random
 import subprocess
 import time
+import urllib.parse
 import yt_dlp
 import yt_dlp_plugins
 
@@ -108,6 +109,44 @@ def get_playlist_info(query: str):
     except Exception as e:
         print(f"Fehler beim Abrufen der Playlist-Info: {e}")
         return None
+
+
+async def get_playlists(interaction: discord.Interaction, query: str) -> list[app_commands.Choice]:
+    encoded_query = urllib.parse.quote_plus(query)
+    playlist_filter = "EgIQAw%3D%3D"
+    search_url = f"https://www.youtube.com/results?search_query={encoded_query}&sp={playlist_filter}"
+    command = [
+        'yt-dlp',
+        '--flat-playlist',
+        '--source-address', '0.0.0.0',
+        '--print', '%(title)s|||%(webpage_url)s',
+        '--playlist-items', '1:10',
+        search_url
+    ]
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+    stdout, stderr = await process.communicate()
+
+    if process.returncode != 0:
+        print(f"Fehler im yt-dlp CLI-Aufruf: {stderr.decode()}")
+        return []
+
+    output_lines = stdout.decode().strip().split('\n')
+
+    album_tuples = []
+    for line in output_lines:
+        if '|||' in line:
+            title, url = line.split('|||', 1)
+            album_tuples.append((title.strip(), url.strip()))
+
+    choices = [app_commands.Choice(name=i[0], value=i[1]) for i in album_tuples]
+
+    return choices
 
 
 def minimize_info(info: dict) -> dict:
@@ -360,6 +399,7 @@ async def play(interaction: discord.Interaction, query: str):
 
 @client.tree.command(name="play-album", description="Spielt einen Song ab oder fügt ihn zur Warteschlange hinzu.")
 @app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
+@app_commands.autocomplete(query=get_playlists)
 async def play_album(interaction: discord.Interaction, query: str):
     await interaction.response.defer(ephemeral=True, thinking=True)
 
