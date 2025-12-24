@@ -434,6 +434,7 @@ async def play_album(interaction: discord.Interaction, query: str):
 
 @client.tree.command(name="play-next", description="Spielt einen Song ab oder fügt ihn als nächstes zur Warteschlange hinzu.")
 @app_commands.describe(query="Gib den YouTube-Link oder einen Suchbegriff ein.")
+@app_commands.autocomplete(query=get_songs)
 async def play_next(interaction: discord.Interaction, query: str):
     await interaction.response.defer(ephemeral=True, thinking=True)
     info = get_info(query)
